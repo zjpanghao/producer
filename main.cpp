@@ -14,15 +14,22 @@ static void InitGlog(const char *name) {
 
 int main(int argc, char*argv[]) {
   InitGlog(argv[0]);
+  LOG(INFO) << "START";
   std::shared_ptr<KafkaProducer> producer1(new KafkaProducer());
-  int rc = producer1->Init("192.168.1.85:9092,192.168.1.82:9092", "east_market", "group_test2");
+  int rc = producer1->Init("192.168.1.106:9092", "t1", "group_test2");
   if (rc < 0)
     return rc;
   int index = 0;
   while (1) {
+    if (index >= 32000) {
+      break;
+    }
     char buf[64];
     snprintf(buf, 64, "%d---messagefortest", index++);
-    producer1->Send(buf, strlen(buf) + 1);
+    char topic[10];
+    sprintf(topic, "zj%d", index % 10);
+    producer1->Send(topic, buf, strlen(buf) + 1, 0);
+    LOG(INFO) << "send " << topic;
     sleep(1);
   }
   return 0;

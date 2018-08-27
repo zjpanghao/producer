@@ -39,6 +39,65 @@ int KafkaProducer::Send(char *buf, int len) {
   return 0;
 }
 
+int KafkaProducer::Send(const char *topic, char *buf, int len, int partition) {
+    /* Start consuming */
+  int rc = 0;
+  rd_kafka_topic_t *rkt = NULL;
+  time_t now = time(NULL);
+  {
+          std::lock_guard<std::mutex> guard(lock);
+          auto it = topicMap.find(topic);
+          if (it == topicMap.end()) {
+                  rkt = rd_kafka_topic_new(kafka_control_.control, topic, NULL);
+                  KafkaTimeTopic timeTopic = {time(NULL), rkt};
+                  topicMap[topic] = timeTopic;
+                  if (topicMap.size() > 50) {
+                          auto itm = topicMap.begin();
+                          while (itm != topicMap.end()) {
+                                  if (now - itm->second.last > 3600) {
+                                          rd_kafka_topic_t *pt = NULL;
+                                          pt = it->second.topic;
+                                          rd_kafka_topic_destroy(pt);
+                                          topicMap.erase(itm++);
+                                  } else {
+                                          itm++;
+                                  }
+                          }
+                  }
+          } else {
+                  rkt = it->second.topic;
+                  it->second.last = now;
+          }
+
+  }
+
+  /* Send/Produce message. */
+  if (rd_kafka_produce(rkt, 
+                       partition,
+		       RD_KAFKA_MSG_F_COPY,
+		       /* Payload and length */
+		       buf, 
+                       len,
+		       /* Optional key and its length */
+		       NULL, 
+                       0,
+		       NULL) == -1) {
+      char log_buf[512];
+      snprintf(log_buf, 
+               sizeof(log_buf),
+	       "%% Failed to produce to topic %s"
+	       "partition %i: %s\n",
+		rd_kafka_err2str(rd_kafka_errno2err(errno)));
+      /* Poll to handle delivery reports */
+      rc = -1;
+        /* Destroy topic */
+      LOG(ERROR) << log_buf;
+  }
+  rd_kafka_poll(kafka_control_.control, 0);
+  /* Destroy topic */
+  return 0;
+}
+
 int KafkaProducer::Send(char *buf, int len, int partition) {
     /* Start consuming */
   int rc = 0;
